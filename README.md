@@ -7,6 +7,7 @@ Tento projekt je distribuovaný kalkulátor prvočísel, který využívá techn
 Pro instalaci projektu je třeba nejprve nainstalovat nuget balíčky. To lze provést pomocí příkazu:
 
 ```bash
+cd DistributedPrimeCalculator
 dotnet restore
 ```
 
