@@ -1,0 +1,7 @@
+@DistributedPrimeCalculator.Server_HostAddress = http://localhost:5002
+
+### Spustit výpočet prvočísel
+POST {{DistributedPrimeCalculator.Server_HostAddress}}/api/calculation/start?start=1&end=100000&batchSize=10000
+Accept: application/json
+
+###
