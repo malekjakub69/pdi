@@ -3,6 +3,7 @@ using DistributedPrimeCalculator.Common.Messages;
 using System.Collections.Generic;
 using System;
 using System.Linq;
+using Akka.Event;
 
 public class MasterActor : ReceiveActor, IWithTimers
 {
@@ -59,8 +60,71 @@ public class MasterActor : ReceiveActor, IWithTimers
             }
         });
 
-        Receive<WorkerHealthCheck>(_ => {
-            // Implementovat health check
+        Receive<WorkerHealthCheck>(message =>
+        {
+            foreach (var worker in _workerLoad.Keys.ToList())
+            {
+                var selection = Context.ActorSelection(worker);
+                selection.Tell(new WorkerHealthCheck(worker), Self);
+            }
+        });
+
+        Receive<WorkerUnavailableMessage>(message =>
+        {
+            if (_workerLoad.ContainsKey(message.WorkerAddress))
+            {
+                Console.WriteLine($"Worker {message.WorkerAddress} je nedostupný.");
+                _workerLoad.Remove(message.WorkerAddress);
+
+                var jobsToReassign = _jobToWorker
+                    .Where(j => j.Value == message.WorkerAddress)
+                    .Select(j => j.Key)
+                    .ToList();
+
+                foreach (var jobId in jobsToReassign)
+                {
+                    if (_activeWork.TryGetValue(jobId, out var work))
+                    {
+                        _pendingWork.Enqueue(work);
+                        _activeWork.Remove(jobId);
+                        _jobToWorker.Remove(jobId);
+                    }
+                }
+
+                DistributeWork();
+            }
+        });
+
+        Receive<CheckTimeoutMessage>(message =>
+        {
+            var timedOutJobs = _activeWork
+                .Where(w => (DateTime.UtcNow - w.Value.Timestamp).TotalSeconds > 10)
+                .Select(w => w.Key)
+                .ToList();
+
+            foreach (var jobId in timedOutJobs)
+            {
+                if (_activeWork.TryGetValue(jobId, out var work))
+                {
+                    var worker = _jobToWorker[jobId];
+                    Console.WriteLine($"Práce {jobId} od workera {worker} vypršela.");
+                    _pendingWork.Enqueue(work);
+                    _activeWork.Remove(jobId);
+                    _jobToWorker.Remove(jobId);
+                    _workerLoad[worker]--;
+                }
+            }
+
+            DistributeWork();
+        });
+
+        Receive<DeadLetter>(message =>
+        {
+            if (message.Message is WorkerHealthCheck healthCheck)
+            {
+                Console.WriteLine($"Worker {healthCheck.WorkerAddress} je nedostupný.");
+                Self.Tell(new WorkerUnavailableMessage(healthCheck.WorkerAddress));
+            }
         });
     }
 
@@ -71,9 +135,12 @@ public class MasterActor : ReceiveActor, IWithTimers
 
     private void DistributeWork()
     {
-        while(_pendingWork.Count > 0)
+        var random = new Random();
+        var shuffledWorkers = _workerLoad.Keys.OrderBy(x => random.Next()).ToList();
+
+        while (_pendingWork.Count > 0)
         {
-            var availableWorker = GetLeastLoadedWorker();
+            var availableWorker = GetLeastLoadedWorker(shuffledWorkers);
             if (availableWorker == null || _workerLoad[availableWorker] >= MaxWorkerLoad)
                 break;
 
@@ -84,11 +151,11 @@ public class MasterActor : ReceiveActor, IWithTimers
         }
     }
 
-    private string? GetLeastLoadedWorker()
+    private string? GetLeastLoadedWorker(List<string> shuffledWorkers)
     {
-        return _workerLoad
-            .OrderBy(w => w.Value)
-            .FirstOrDefault().Key;
+        return shuffledWorkers
+            .OrderBy(w => _workerLoad[w])
+            .FirstOrDefault();
     }
 
     private void AssignWorkToWorker(WorkMessage work, string worker)
@@ -99,6 +166,7 @@ public class MasterActor : ReceiveActor, IWithTimers
         var selection = Context.ActorSelection(worker);
         selection.Tell(work, Self);
         Console.WriteLine($"Práce {work.JobId} přiřazena workeru na {worker}");
+        Timers.StartSingleTimer($"timeout-{work.JobId}", new CheckTimeoutMessage(), TimeSpan.FromSeconds(10));
     }
 
     private int GenerateWorkId()

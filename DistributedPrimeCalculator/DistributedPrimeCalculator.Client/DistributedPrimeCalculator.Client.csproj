@@ -14,7 +14,10 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\DistributedPrimeCalculator.Common\DistributedPrimeCalculator.Common.csproj" />
+    <ProjectReference
+      Include="..\DistributedPrimeCalculator.Common\DistributedPrimeCalculator.Common.csproj" />
+    <ProjectReference
+      Include="..\DistributedPrimeCalculator.Server\DistributedPrimeCalculator.Server.csproj" />
   </ItemGroup>
 
 </Project>

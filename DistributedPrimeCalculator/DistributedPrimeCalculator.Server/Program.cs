@@ -17,6 +17,8 @@ var config = ConfigurationFactory.ParseString(@"
                     preserveObjectReferences = true
                 }
             }
+            log-dead-letters = off
+            log-dead-letters-during-shutdown = off
         }
         remote.dot-netty.tcp {
             hostname = ""127.0.0.1""
